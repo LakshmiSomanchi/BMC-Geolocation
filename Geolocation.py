@@ -5,7 +5,9 @@ from streamlit_geolocation import streamlit_geolocation
 st.set_page_config(page_title="BMC Geo-Collector", page_icon="📍", layout="centered")
 
 # --- DATASET ---
+# We add a special "Others" entry at the start with ID -1
 bmc_list = [
+    [-1, "Others", "Add New BMC Manually", ""],  # <--- NEW OPTION
     [5381, "SHIRSATWADI", "SHIVKRUPA DUDH SAN KEND SHIRSATWADI", "INDAPUR"],
     [5408, "BHUINJ", "SHRIRAM DUDH SANKALAN & SHIT.BHUINJ", "WAI"],
     [38, "Gunaware", "MORESHWAR JEDHEWASTI", "PHALTAN"],
@@ -81,7 +83,7 @@ if 'data_log' not in st.session_state:
 st.title("📍 BMC Geo-Collector")
 st.write("Collect Geolocation for BMCs.")
 
-# --- SELECTION ---
+# --- SELECTION LOGIC ---
 selection = st.selectbox(
     "1. Select the BMC", 
     range(len(df_master)), 
@@ -89,49 +91,61 @@ selection = st.selectbox(
 )
 selected_row = df_master.iloc[selection]
 
+# Variables to hold the final info to save
+final_code = selected_row["MCC_CODE"]
+final_village = selected_row["Village"]
+final_bmc_name = selected_row["BMC_Name"]
+final_tehsil = selected_row["Tehsil"]
+
+# --- OTHERS / MANUAL INPUT LOGIC ---
+if final_code == -1:
+    st.info("✍️ Please enter the details for this new BMC:")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        final_village = st.text_input("Village Name")
+        final_tehsil = st.text_input("Tehsil")
+    with col_b:
+        final_bmc_name = st.text_input("BMC Name / Center Name")
+        # Optional: Allow them to enter a new Code or leave blank
+        new_code_input = st.text_input("MCC Code (Optional)", value="9999")
+        final_code = new_code_input
+
 st.divider()
 
-# --- TABS FOR INPUT ---
-tab1, tab2 = st.tabs(["📡 Automatic GPS", "✍️ Manual Entry"])
+# --- TABS FOR GEOLOCATION ---
+tab1, tab2 = st.tabs(["📡 Automatic GPS", "✍️ Manual GPS Input"])
 
 # === OPTION 1: AUTO ===
 with tab1:
     st.write("Click below to auto-detect coordinates.")
     location = streamlit_geolocation()
     
-    # Check if the component returned valid data
     if location['latitude'] is not None:
-        st.success("✅ GPS Signal Acquired!")
         lat = location['latitude']
         lon = location['longitude']
-        source = "Auto-GPS"
         
-        st.info(f"Detected: {lat}, {lon}")
+        st.success(f"Signal Found: {lat}, {lon}")
         
         if st.button("Save Auto-Location", key="btn_auto"):
-            entry = {
-                "MCC_CODE": selected_row["MCC_CODE"],
-                "Village": selected_row["Village"],
-                "BMC_Name": selected_row["BMC_Name"],
-                "Tehsil": selected_row["Tehsil"],
-                "Latitude": lat,
-                "Longitude": lon,
-                "Source": source
-            }
-            st.session_state.data_log.append(entry)
-            st.success("Saved!")
+            # Check if user filled in "Others" details
+            if final_bmc_name == "" or final_village == "":
+                st.error("⚠️ Please fill in Village and BMC Name above first!")
+            else:
+                entry = {
+                    "MCC_CODE": final_code,
+                    "Village": final_village,
+                    "BMC_Name": final_bmc_name,
+                    "Tehsil": final_tehsil,
+                    "Latitude": lat,
+                    "Longitude": lon,
+                    "Source": "Auto-GPS"
+                }
+                st.session_state.data_log.append(entry)
+                st.toast("Saved!")
 
 # === OPTION 2: MANUAL ===
 with tab2:
-    st.write("If Auto-GPS fails, use this method.")
-    st.markdown("""
-    1. Open **Google Maps** on your phone.
-    2. Long-press on your blue location dot (or the specific building).
-    3. Copy the numbers (Latitude, Longitude).
-    4. Paste them below.
-    """)
-    
-    # Link to open Google Maps quickly
+    st.write("If Auto-GPS fails, copy coordinates from Google Maps.")
     st.link_button("↗️ Open Google Maps", "https://www.google.com/maps")
 
     col1, col2 = st.columns(2)
@@ -143,18 +157,20 @@ with tab2:
     if st.button("Save Manual Location", key="btn_manual"):
         if manual_lat == 0.0 or manual_lon == 0.0:
             st.error("Please enter valid coordinates (not 0.0)")
+        elif final_bmc_name == "" or final_village == "":
+            st.error("⚠️ Please fill in Village and BMC Name above first!")
         else:
             entry = {
-                "MCC_CODE": selected_row["MCC_CODE"],
-                "Village": selected_row["Village"],
-                "BMC_Name": selected_row["BMC_Name"],
-                "Tehsil": selected_row["Tehsil"],
+                "MCC_CODE": final_code,
+                "Village": final_village,
+                "BMC_Name": final_bmc_name,
+                "Tehsil": final_tehsil,
                 "Latitude": manual_lat,
                 "Longitude": manual_lon,
                 "Source": "Manual"
             }
             st.session_state.data_log.append(entry)
-            st.success("Saved!")
+            st.toast("Saved!")
 
 # --- DOWNLOAD SECTION ---
 if st.session_state.data_log:
