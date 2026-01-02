@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 from streamlit_js_eval import streamlit_js_eval
 
-st.set_page_config(page_title="BMC Geolocation Mapper", page_icon="📍")
+st.set_page_config(page_title="BMC Geolocation Collector", page_icon="📍", layout="centered")
 
-# 1. The Full Dataset
-data = [
+# --- 1. DATASET SETUP ---
+# Pre-loading your 65 BMCs
+bmc_list = [
     [5381, "SHIRSATWADI", "SHIVKRUPA DUDH SAN KEND SHIRSATWADI", "INDAPUR"],
     [5408, "BHUINJ", "SHRIRAM DUDH SANKALAN & SHIT.BHUINJ", "WAI"],
     [38, "Gunaware", "MORESHWAR JEDHEWASTI", "PHALTAN"],
@@ -67,54 +68,80 @@ data = [
     [5334, "KULKJAI", "YOGESHWARI DUDH SANK.KEND.KULAKJAI", "MAN"],
     [5189, "LAXMI SOMANTHALI", "LAXMI DUDH DAIRY ALGUDEWADI COOLER", "PHALTAN"],
     [5149, "PIMPODE", "SHREE KRISHNA DAIRY, PIMPODE", "KOREGAON"],
-    [5553, "SARKALWADI", "SHREE RAM DUDH SARKALWADI", "KOREGAON"],
+    [5553, "SARKALWADI", "SHREE RAM DUDH SARKALWADIKOREGAON", "KOREGAON"],
     [5204, "NANDWAL", "SHIVSAI DUDH NANDVAL", "KOREGAON"],
     [5436, "JAWALI", "AJAY DUDH SANKALAN KENDRA JAWALI", "PHALTAN"],
     [5273, "PIRALE", "VISHNU NARAYAN DUDH", "MALSHIRAS"]
 ]
 
-df = pd.DataFrame(data, columns=["MCC_CODE", "Village", "BMC_Name", "Tehsil"])
+df_master = pd.DataFrame(bmc_list, columns=["MCC_CODE", "Village", "BMC_Name", "Tehsil"])
 
-# Initialize session state for storage
-if 'collection' not in st.session_state:
-    st.session_state.collection = []
+# --- 2. STATE MANAGEMENT ---
+if 'collected_rows' not in st.session_state:
+    st.session_state.collected_rows = []
 
+# --- 3. UI LAYOUT ---
 st.title("🥛 BMC Geolocation Collector")
-st.write("Use this app while physically present at the BMC to record coordinates.")
+st.info("Ensure GPS is ON. Open this app in Chrome/Safari on your mobile.")
 
-# 2. Selection
-selection = st.selectbox("Select BMC to Geo-Tag", range(len(df)), 
-                         format_func=lambda i: f"{df.iloc[i]['Village']} | {df.iloc[i]['BMC_Name']}")
+# Selection box
+selection = st.selectbox(
+    "1. Select BMC Name", 
+    range(len(df_master)), 
+    format_func=lambda i: f"{df_master.iloc[i]['Village']} | {df_master.iloc[i]['BMC_Name']}"
+)
+target = df_master.iloc[selection]
 
-target_bmc = df.iloc[selection]
+st.divider()
 
-# 3. Geolocation Logic
-loc = streamlit_js_eval(js_expressions='navigator.geolocation.getCurrentPosition(success => {return {lat: success.coords.latitude, lon: success.coords.longitude}})', key='get_loc')
+# --- 4. IMPROVED GEOLOCATION LOGIC ---
+st.subheader("2. Get Location")
+capture_trigger = st.checkbox("Activate GPS Capture")
 
-if loc:
-    lat, lon = loc['lat'], loc['lon']
-    st.success(f"📍 Location Found: {lat}, {lon}")
-    
-    if st.button("Save this Location"):
-        entry = {
-            "MCC_CODE": target_bmc["MCC_CODE"],
-            "Village": target_bmc["Village"],
-            "BMC_Name": target_bmc["BMC_Name"],
-            "Latitude": lat,
-            "Longitude": lon
-        }
-        st.session_state.collection.append(entry)
-        st.balloons()
-        st.write("Saved to list!")
-else:
-    st.warning("Waiting for GPS signal... Please ensure Location Access is allowed in your browser.")
+if capture_trigger:
+    # We include enableHighAccuracy and a timeout to force the browser to try harder
+    loc = streamlit_js_eval(
+        js_expressions='navigator.geolocation.getCurrentPosition(s => {return {lat: s.coords.latitude, lon: s.coords.longitude}}, e => {return {err: e.message}}, {enableHighAccuracy:true, timeout:10000})',
+        key='get_loc'
+    )
 
-# 4. Results & Download
-if st.session_state.collection:
+    if loc:
+        if 'err' in loc:
+            st.error(f"Error: {loc['err']}")
+            st.warning("Please check your browser settings and allow 'Location' for this site.")
+        else:
+            lat, lon = loc['lat'], loc['lon']
+            st.success(f"📍 Coordinates Found: {lat}, {lon}")
+            
+            # Map Preview
+            map_data = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+            st.map(map_data)
+
+            if st.button("Save this Entry"):
+                new_entry = {
+                    "MCC_CODE": target["MCC_CODE"],
+                    "Village": target["Village"],
+                    "BMC_Name": target["BMC_Name"],
+                    "Tehsil": target["Tehsil"],
+                    "Latitude": lat,
+                    "Longitude": lon
+                }
+                st.session_state.collected_rows.append(new_entry)
+                st.success("✅ Entry saved to the temporary table below!")
+    else:
+        st.write("⌛ Fetching GPS signal... please wait.")
+
+# --- 5. DATA TABLE & EXPORT ---
+if st.session_state.collected_rows:
     st.divider()
-    st.subheader("Collected Data")
-    res_df = pd.DataFrame(st.session_state.collection)
-    st.dataframe(res_df)
+    st.subheader("3. Collected Data List")
+    temp_df = pd.DataFrame(st.session_state.collected_rows)
+    st.dataframe(temp_df)
     
-    csv = res_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Final CSV", data=csv, file_name="bmc_geolocations.csv", mime="text/csv")
+    csv_data = temp_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Collected Data (CSV)",
+        data=csv_data,
+        file_name="bmc_collected_locations.csv",
+        mime="text/csv"
+    )
