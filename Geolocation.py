@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 from streamlit_geolocation import streamlit_geolocation
 
-st.set_page_config(page_title="BMC Geo-Collector", page_icon="📍")
+st.set_page_config(page_title="BMC Geo-Collector", page_icon="📍", layout="centered")
 
-# --- 1. THE DATASET ---
+# --- DATASET ---
 bmc_list = [
     [5381, "SHIRSATWADI", "SHIVKRUPA DUDH SAN KEND SHIRSATWADI", "INDAPUR"],
     [5408, "BHUINJ", "SHRIRAM DUDH SANKALAN & SHIT.BHUINJ", "WAI"],
@@ -68,20 +68,20 @@ bmc_list = [
     [5189, "LAXMI SOMANTHALI", "LAXMI DUDH DAIRY ALGUDEWADI COOLERPHALTAN", "PHALTAN"],
     [5149, "PIMPODE", "SHREE KRISHNA DAIRY, PIMPODEKOREGAON", "KOREGAON"],
     [5553, "SARKALWADI", "SHREE RAM DUDH SARKALWADIKOREGAON", "KOREGAON"],
-    [5204, "NANDWAL", "SHIVSAI DUDH NANDWALKOREGAON", "KOREGAON"],
+    [5204, "NANDWAL", "SHIVSAI DUDH NANDVALKOREGAON", "KOREGAON"],
     [5436, "JAWALI", "AJAY DUDH SANKALAN KENDRA JAWALIPHALTAN", "PHALTAN"],
     [5273, "PIRALE", "VISHNU NARAYAN DUDHMALSHIRAS", "MALSHIRAS"]
 ]
 
 df_master = pd.DataFrame(bmc_list, columns=["MCC_CODE", "Village", "BMC_Name", "Tehsil"])
 
-# Session state to keep collected data across reruns
 if 'data_log' not in st.session_state:
     st.session_state.data_log = []
 
-st.title("📍 BMC Geolocation Collector")
+st.title("📍 BMC Geo-Collector")
+st.write("Collect Geolocation for BMCs.")
 
-# --- Step 1: Select BMC ---
+# --- SELECTION ---
 selection = st.selectbox(
     "1. Select the BMC", 
     range(len(df_master)), 
@@ -89,44 +89,84 @@ selection = st.selectbox(
 )
 selected_row = df_master.iloc[selection]
 
-# --- Step 2: Get Location ---
-st.subheader("2. Get Current Coordinates")
-st.write("Click the button below to fetch GPS data from your phone.")
-location = streamlit_geolocation()
+st.divider()
 
-if location['latitude'] is not None:
-    lat = location['latitude']
-    lon = location['longitude']
-    
-    st.success(f"Location Captured: Lat {lat}, Lon {lon}")
-    
-    # --- Step 3: Save Entry ---
-    if st.button("Save this Location"):
-        entry = {
-            "MCC_CODE": selected_row["MCC_CODE"],
-            "Village": selected_row["Village"],
-            "BMC_Name": selected_row["BMC_Name"],
-            "Tehsil": selected_row["Tehsil"],
-            "Latitude": lat,
-            "Longitude": lon
-        }
-        st.session_state.data_log.append(entry)
-        st.toast("Entry saved locally!")
+# --- TABS FOR INPUT ---
+tab1, tab2 = st.tabs(["📡 Automatic GPS", "✍️ Manual Entry"])
 
-# --- Step 4: Show Table and Download ---
+# === OPTION 1: AUTO ===
+with tab1:
+    st.write("Click below to auto-detect coordinates.")
+    location = streamlit_geolocation()
+    
+    # Check if the component returned valid data
+    if location['latitude'] is not None:
+        st.success("✅ GPS Signal Acquired!")
+        lat = location['latitude']
+        lon = location['longitude']
+        source = "Auto-GPS"
+        
+        st.info(f"Detected: {lat}, {lon}")
+        
+        if st.button("Save Auto-Location", key="btn_auto"):
+            entry = {
+                "MCC_CODE": selected_row["MCC_CODE"],
+                "Village": selected_row["Village"],
+                "BMC_Name": selected_row["BMC_Name"],
+                "Tehsil": selected_row["Tehsil"],
+                "Latitude": lat,
+                "Longitude": lon,
+                "Source": source
+            }
+            st.session_state.data_log.append(entry)
+            st.success("Saved!")
+
+# === OPTION 2: MANUAL ===
+with tab2:
+    st.write("If Auto-GPS fails, use this method.")
+    st.markdown("""
+    1. Open **Google Maps** on your phone.
+    2. Long-press on your blue location dot (or the specific building).
+    3. Copy the numbers (Latitude, Longitude).
+    4. Paste them below.
+    """)
+    
+    # Link to open Google Maps quickly
+    st.link_button("↗️ Open Google Maps", "https://www.google.com/maps")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        manual_lat = st.number_input("Latitude", format="%.6f", value=0.0)
+    with col2:
+        manual_lon = st.number_input("Longitude", format="%.6f", value=0.0)
+
+    if st.button("Save Manual Location", key="btn_manual"):
+        if manual_lat == 0.0 or manual_lon == 0.0:
+            st.error("Please enter valid coordinates (not 0.0)")
+        else:
+            entry = {
+                "MCC_CODE": selected_row["MCC_CODE"],
+                "Village": selected_row["Village"],
+                "BMC_Name": selected_row["BMC_Name"],
+                "Tehsil": selected_row["Tehsil"],
+                "Latitude": manual_lat,
+                "Longitude": manual_lon,
+                "Source": "Manual"
+            }
+            st.session_state.data_log.append(entry)
+            st.success("Saved!")
+
+# --- DOWNLOAD SECTION ---
 if st.session_state.data_log:
     st.divider()
-    st.subheader("Collected List")
+    st.subheader(f"Collected Entries: {len(st.session_state.data_log)}")
     log_df = pd.DataFrame(st.session_state.data_log)
-    st.table(log_df)
+    st.dataframe(log_df)
     
-    # Download Logic
     csv = log_df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="📥 Download Geolocation CSV",
+        label="📥 Download Final CSV",
         data=csv,
         file_name="bmc_geolocations.csv",
         mime="text/csv"
     )
-else:
-    st.info("No locations saved yet. Capture a location and click 'Save'.")
